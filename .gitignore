@@ -1,0 +1,15 @@
+node_modules/
+dist/
+frontend/dist/
+.DS_Store
+
+# 勿将本机 Maven 仓库提交进项目
+.m2/
+
+backend/target/
+backend/storage/
+storage/
+
+*.log
+.env
+

@@ -1,0 +1,211 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: legal-assistant-backend
+  config:
+    import:
+      - optional:file:../.env[.properties]
+      - optional:file:.env[.properties]
+
+  datasource:
+    # tcpKeepAlive：长时间 NPC 同步时连接池里可能长时间不占线，避免被防火墙/NAT 静默掐断
+    url: jdbc:mysql://${MYSQL_HOST:192.168.100.128}:${MYSQL_PORT:3307}/${MYSQL_DB:legal_assistant}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true&tcpKeepAlive=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:123456}
+    hikari:
+      # 短于常见 wait_timeout，并配合 keepalive，减少「约十余分钟后首条 SQL 即 Communications link failure」
+      max-lifetime: ${HIKARI_MAX_LIFETIME_MS:250000}
+      keepalive-time: ${HIKARI_KEEPALIVE_MS:120000}
+
+  servlet:
+    multipart:
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:50MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:100MB}
+
+  sql:
+    init:
+      mode: ${SQL_INIT_MODE:always}
+      continue-on-error: true
+      schema-locations: classpath:schema.sql,classpath:db/law-article-mapping-migration.sql
+
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.100.128}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}
+      database: ${REDIS_DATABASE:1}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:192.168.100.128}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASSWORD:123456}
+    listener:
+      simple:
+        concurrency: ${RABBITMQ_LAW_SYNC_CONCURRENCY:1}
+        max-concurrency: ${RABBITMQ_LAW_SYNC_MAX_CONCURRENCY:1}
+
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
+          temperature: 0.3
+
+app:
+  storage:
+    root: ${APP_STORAGE_ROOT:./storage}
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://192.168.100.128:9000}
+    access-key: ${MINIO_ACCESS_KEY:admin}
+    secret-key: ${MINIO_SECRET_KEY:12345678}
+    bucket: ${MINIO_BUCKET:legal-assistant}
+  chat:
+    history-max: ${CHAT_HISTORY_MAX:200}
+  ai:
+    # 模块1：智能法律咨询 / 文书生成（DeepSeek）
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
+      # 如需自定义 DeepSeek chat/completions 完整 URL（无 /v1 前缀等）可覆盖
+      chat-completions-url: ${DEEPSEEK_CHAT_COMPLETIONS_URL:https://api.deepseek.com/chat/completions}
+    # 智能咨询附件图片 OCR：百度千帆 deepseek-ocr（POST /v2/chat/completions）
+    ocr:
+      api-key: ${QIANFAN_OCR_API_KEY:}
+      chat-completions-url: ${QIANFAN_OCR_BASE_URL:${QIANFAN_OCR_CHAT_URL:https://qianfan.baidubce.com/v2/chat/completions}}
+      model: ${QIANFAN_OCR_MODEL:deepseek-ocr}
+      user-prompt: ${QIANFAN_OCR_USER_PROMPT:OCR this image.}
+      max-image-edge-pixels: ${QIANFAN_OCR_MAX_IMAGE_EDGE:2048}
+      recompress-min-bytes: ${QIANFAN_OCR_RECOMPRESS_MIN_BYTES:320000}
+      # 千帆 OCR RPM 限制较紧；全局串行调用 + 两次真实请求最小间隔（毫秒）
+      min-interval-ms: ${QIANFAN_OCR_MIN_INTERVAL_MS:7000}
+      rate-limit-retry-delay-ms: ${QIANFAN_OCR_RATE_LIMIT_RETRY_DELAY_MS:65000}
+      rate-limit-max-retries: ${QIANFAN_OCR_RATE_LIMIT_MAX_RETRIES:1}
+      # 相同图片内容（预处理后的字节）在 TTL 内直接复用结果，避免「预识别 + 发送」打两次千帆
+      result-cache-ttl-ms: ${QIANFAN_OCR_RESULT_CACHE_TTL_MS:600000}
+      result-cache-max-entries: ${QIANFAN_OCR_RESULT_CACHE_MAX:128}
+    # 模块4：合同审查 / 长文本分析（Qwen3.6-plus）
+    qwen:
+      api-key: ${QWEN_API_KEY:}
+      base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      model: ${QWEN_CHAT_MODEL:qwen3.6-plus}
+      # 仅「合同审查」Rest 接口使用（QwenContractReviewService），与 Spring AI/其他模块无关
+      contract-review:
+        # 越低越稳；建议 0～0.2
+        temperature: ${CONTRACT_REVIEW_TEMPERATURE:0.1}
+        # 与 temperature 二选一为主也可并用；略低可减少同输入下条数大幅波动
+        top-p: ${CONTRACT_REVIEW_TOP_P:0.35}
+        # 若 DashScope/兼容模式支持时生效，固定后同合同可复现性更好；不填则不下发
+        seed: ${CONTRACT_REVIEW_SEED:}
+    # 模块2/5：法条检索 / 案例匹配（Embedding）
+    embedding:
+      provider: ${EMBEDDING_PROVIDER:qwen}
+      model: ${QWEN_EMBEDDING_MODEL:text-embedding-v4}
+      api-key: ${QWEN_API_KEY:}
+      base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+  rag:
+    pgvector:
+      host: ${PGVECTOR_HOST:192.168.100.128}
+      port: ${PGVECTOR_PORT:5432}
+      database: ${PGVECTOR_DB:legal_rag}
+      username: ${PGVECTOR_USER:admin}
+      password: ${PGVECTOR_PASSWORD:123456}
+      table: ${PGVECTOR_TABLE:rag_document_chunk}
+  law:
+    cache:
+      enabled: ${LAW_CACHE_ENABLED:true}
+      ttl-seconds: ${LAW_CACHE_TTL_SECONDS:300}
+    sync:
+      rabbit:
+        exchange: ${LAW_SYNC_RABBIT_EXCHANGE:legal.law.sync.exchange}
+        queue: ${LAW_SYNC_RABBIT_QUEUE:legal.law.sync.queue}
+        routing-key: ${LAW_SYNC_RABBIT_ROUTING_KEY:legal.law.sync}
+    # 国家法律法规数据库 https://flk.npc.gov.cn（law-search + 临时下载链接）
+    npc-flk:
+      scheduled-enabled: ${LAW_NPC_FLK_SCHEDULED_ENABLED:false}
+      cron: ${LAW_NPC_FLK_CRON:0 0 4 * * ?}
+      # flk.npc.gov.cn 列表/详情/签名链接（RestClient）
+      connect-timeout-ms: ${LAW_NPC_FLK_CONNECT_TIMEOUT_MS:20000}
+      read-timeout-ms: ${LAW_NPC_FLK_READ_TIMEOUT_MS:120000}
+      # 对象存储直链下载（HttpClient，大文件 PDF 宜放宽）
+      download-connect-timeout-ms: ${LAW_NPC_FLK_DOWNLOAD_CONNECT_TIMEOUT_MS:30000}
+      download-read-timeout-ms: ${LAW_NPC_FLK_DOWNLOAD_READ_TIMEOUT_MS:300000}
+      # 预签名 URL 含 X-Amz-SignedHeaders=host，改公网 host 会 403；默认 false。仅当你确认厂商支持换 host 时再 true。
+      rewrite-cucloud-internal-download-host: ${LAW_NPC_FLK_REWRITE_CUCLOUD_INTERNAL_DOWNLOAD_HOST:false}
+      # 对象存储为内网域名时，本机可填「能访问 *-internal.cucloud.cn 的 HTTP 代理」（如公司跳板）；留空则直连。
+      download-http-proxy-host: ${LAW_NPC_FLK_DOWNLOAD_HTTP_PROXY_HOST:}
+      download-http-proxy-port: ${LAW_NPC_FLK_DOWNLOAD_HTTP_PROXY_PORT:8080}
+      # 网络抖动/超时重试（单次同步内）；详情遇 WAF/HTML 时另有指数退避见 html-waf-*
+      http-retries: ${LAW_NPC_FLK_HTTP_RETRIES:5}
+      http-retry-delay-ms: ${LAW_NPC_FLK_HTTP_RETRY_DELAY_MS:2000}
+      page-size: ${LAW_NPC_FLK_PAGE_SIZE:20}
+      # true：列表按页连续请求直至无数据（默认，与检索页翻页一致）；false：仅 npcPageStart～npcPageEnd。单次请求可用 npcFetchAllListPages 覆盖。
+      fetch-all-list-pages: ${LAW_NPC_FLK_FETCH_ALL_LIST_PAGES:true}
+      # 单任务列表请求页数硬上限（防止异常死循环）
+      max-list-pages: ${LAW_NPC_FLK_MAX_LIST_PAGES:100000}
+      max-laws-per-run: ${LAW_NPC_FLK_MAX_LAWS_PER_RUN:1}
+      # 每条详情之间的基础间隔；加 jitter 降低固定节奏触发 WAF
+      detail-delay-ms: ${LAW_NPC_FLK_DETAIL_DELAY_MS:1600}
+      detail-delay-jitter-ms: ${LAW_NPC_FLK_DETAIL_DELAY_JITTER_MS:500}
+      # 详情接口返回 HTML/WAF 挑战页时的额外冷却与退避基数（毫秒）
+      html-waf-cooldown-ms: ${LAW_NPC_FLK_HTML_WAF_COOLDOWN_MS:6000}
+      html-waf-retry-base-ms: ${LAW_NPC_FLK_HTML_WAF_RETRY_BASE_MS:2500}
+      html-waf-rewarm: ${LAW_NPC_FLK_HTML_WAF_REWARM:true}
+      list-type: ${LAW_NPC_FLK_LIST_TYPE:}
+      # 未指定 npcType / 分类时：national（或 law / law-only）= 仅检索页「法律」整支叶子 flfgCodeId（与侧边栏勾选「法律」一致，不含宪法/行政法规/司法解释）；national-broad=另含宪法、行政法规、监察法规、司法解释等；all=不限分类
+      default-flfg-scope: ${LAW_NPC_FLK_DEFAULT_FLFG_SCOPE:national}
+      # true：列表请求与返回结果均限制在「法律」模块（scope=all 或关键词检索时也会丢掉非法律类条目）；false：可配合 national-broad 等爬其它大类。单次请求可用 npcLawModuleOnly 覆盖。
+      law-module-only: ${LAW_NPC_FLK_LAW_MODULE_ONLY:true}
+      # 列表排序：flfgfl=法律法规分类（与检索页「按法律法规分类」一致）；gbrq/sxrq=公布/施行日期；order -1 一般为降序。留空则回退站点默认。
+      list-sort-field: ${LAW_NPC_FLK_LIST_SORT_FIELD:flfgfl}
+      list-sort-order: ${LAW_NPC_FLK_LIST_SORT_ORDER:-1}
+      # 库中已有同一 bbbs（NPC 详情 URL 中出现）则跳过详情抓取，减轻站点压力
+      skip-if-present: ${LAW_NPC_FLK_SKIP_IF_PRESENT:true}
+      # 地方法规（地方性法规、自治/单行条例、经济特区法规等）：skip=列表与详情均不抓取；defer=检索分桶与明细处理顺序排在中央法规之后；allow=不限制。单次请求可用 npcLocalRegulationsPolicy 覆盖。
+      local-regulations-policy: ${LAW_NPC_FLK_LOCAL_REGULATIONS_POLICY:skip}
+    # false：表空时不再写入内置示例条（seed:// / 内置基础库）。需要本地演示条时设 LAW_SEED_DATA_ON_EMPTY=true。
+    seed-data-on-empty: ${LAW_SEED_DATA_ON_EMPTY:false}
+    crawler:
+      enabled: ${LAW_CRAWLER_ENABLED:true}
+      cron: ${LAW_CRAWLER_CRON:0 0 3 * * ?}
+      seed-urls: ${LAW_CRAWLER_SEED_URLS:}
+      connect-timeout-ms: ${LAW_CRAWLER_CONNECT_TIMEOUT_MS:10000}
+      read-timeout-ms: ${LAW_CRAWLER_READ_TIMEOUT_MS:20000}
+      # 该 sourceUrl 已在 law_article 中存在则不再请求页面
+      skip-if-present: ${LAW_CRAWLER_SKIP_IF_PRESENT:true}
+    # 通俗解读：先按 sourceUrl 抓取页面再截取目标条正文；详情接口可调用大模型（入库同步仅用截取+规则，避免批量耗配额）
+    interpretation:
+      read-timeout-ms: ${LAW_INTERPRETATION_READ_TIMEOUT_MS:20000}
+      max-article-chars: ${LAW_INTERPRETATION_MAX_ARTICLE_CHARS:4800}
+      ai-enabled: ${LAW_INTERPRETATION_AI_ENABLED:true}
+      # true：通俗解读先调用模型「通读原文→提炼要点」，再调用模型「仅据要点写精炼大白话」（质量更好、耗时与费用约×2）
+      ai-two-step: ${LAW_INTERPRETATION_AI_TWO_STEP:true}
+      # 正文短于该字数时走单轮提示，避免小题大做
+      ai-two-step-min-chars: ${LAW_INTERPRETATION_AI_TWO_STEP_MIN_CHARS:80}
+
+logging:
+  level:
+    root: INFO
+    org.springframework.ai: INFO
+    # 法条检索：NPC 同步默认 DEBUG（分步耗时/重试）；其余默认 INFO。可用 LAW_LOG_LEVEL=DEBUG 统一调高。
+    com.fatongai.legalassistant.law.service.NpcFlkLawImporter: ${LAW_NPC_LOG_LEVEL:INFO}
+    com.fatongai.legalassistant.law.service.LawCrawlerService: ${LAW_LOG_LEVEL:INFO}
+    com.fatongai.legalassistant.law.service.LawArticleService: ${LAW_LOG_LEVEL:INFO}
+    com.fatongai.legalassistant.law.service.LawColloquialInterpretationService: ${LAW_LOG_LEVEL:INFO}
+    com.fatongai.legalassistant.law.controller.LawArticleController: ${LAW_LOG_LEVEL:INFO}
+    # 智能咨询 · 上传附件 OCR / 文本提取（失败见 WARN 栈与千帆返回片段）
+    com.fatongai.legalassistant.ai.QianfanOcrService: INFO
+    com.fatongai.legalassistant.file.AttachmentExtractService: INFO
+    # 合同审查：上传解析（Tika）与审查输出；可用 CONTRACT_LOG_LEVEL=DEBUG 看全文片段
+    com.fatongai.legalassistant.file.TextExtractService: ${CONTRACT_LOG_LEVEL:INFO}
+    com.fatongai.legalassistant.contract.controller.ContractReviewController: ${CONTRACT_LOG_LEVEL:INFO}
+    com.fatongai.legalassistant.contract.service.QwenContractReviewService: ${CONTRACT_LOG_LEVEL:INFO}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
