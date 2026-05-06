@@ -11,5 +11,12 @@ backend/storage/
 storage/
 
 *.log
+
+# 环境变量与密钥（勿提交）
 .env
+.env.*
+!.env.example
+
+# IDE
+.idea/
 
