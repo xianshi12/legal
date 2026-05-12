@@ -3,6 +3,7 @@ package com.fatongai.legalassistant.chat.controller;
 import com.fatongai.legalassistant.ai.LegalAiService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fatongai.legalassistant.auth.AuthContext;
 import com.fatongai.legalassistant.chat.dto.AttachmentExtractItem;
 import com.fatongai.legalassistant.chat.dto.ChatMessage;
 import com.fatongai.legalassistant.chat.dto.ChatMessageAttachment;
@@ -69,9 +70,9 @@ public class ChatController {
         this.objectMapper = objectMapper;
     }
 
-    // TODO Phase 2：接入登录后替换为真实用户ID
     private Long currentUserId() {
-        return 1L;
+        Long userId = AuthContext.getUserId();
+        return userId == null ? 1L : userId;
     }
 
     @PostMapping("/session/create")

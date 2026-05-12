@@ -1,13 +1,18 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { useAuthStore } from '../../stores/auth'
 
 const STORAGE_KEY = 'legalAssistant:sidenavExpanded'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 
 const active = computed(() => route.path)
+const userName = computed(() => auth.user?.displayName || auth.user?.name || '未登录')
+const roleText = computed(() => (auth.role === 'lawyer' ? '律师' : '用户'))
 
 /** 默认收起侧栏；本地存有「展开」偏好时再展开 */
 const sidenavExpanded = ref(false)
@@ -28,6 +33,12 @@ function go(path) {
 
 function toggleSidenav() {
   sidenavExpanded.value = !sidenavExpanded.value
+}
+
+function logout() {
+  auth.logout()
+  ElMessage.success('已退出登录')
+  router.push('/login')
 }
 
 onMounted(() => {
@@ -61,12 +72,26 @@ watch(sidenavExpanded, (v) => {
         <button class="icon-btn" type="button">
           <span class="material-symbols-outlined">notifications</span>
         </button>
-        <div class="profile" role="button" tabindex="0">
-          <div class="avatar">
-            <span class="material-symbols-outlined" style="color: var(--on-primary)">person</span>
+        <el-dropdown v-if="auth.isAuthenticated" trigger="click" @command="(command) => command === 'logout' && logout()">
+          <div class="profile" role="button" tabindex="0">
+            <div class="avatar">
+              <span class="material-symbols-outlined" style="color: var(--on-primary)">person</span>
+            </div>
+            <div class="profile-copy">
+              <span class="profile-text">{{ userName }}</span>
+              <span class="profile-role">{{ roleText }}</span>
+            </div>
           </div>
-          <span class="profile-text">个人中心</span>
-        </div>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item disabled>
+                {{ auth.user?.phone || auth.user?.email || '当前账号' }}
+              </el-dropdown-item>
+              <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <button v-else class="login-link" type="button" @click="go('/login')">登录 / 注册</button>
       </div>
     </header>
 
@@ -184,6 +209,7 @@ watch(sidenavExpanded, (v) => {
   padding-left: 16px;
   border-left: 1px solid var(--outline-variant);
   cursor: pointer;
+  outline: none;
 }
 .avatar {
   width: 32px;
@@ -197,8 +223,34 @@ watch(sidenavExpanded, (v) => {
 }
 .profile-text {
   font-weight: 500;
-  font-size: 16px;
+  font-size: 14px;
   color: var(--on-surface);
+}
+.profile-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.profile-role {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--primary);
+  font-weight: 700;
+}
+.login-link {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--outline-variant));
+  border-radius: var(--radius-lg);
+  background: var(--surface-container-lowest);
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.login-link:hover {
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface-container-lowest));
+  border-color: var(--primary);
 }
 .body {
   flex: 1;

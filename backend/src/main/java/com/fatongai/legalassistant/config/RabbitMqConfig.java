@@ -36,6 +36,23 @@ public class RabbitMqConfig {
     }
 
     @Bean
+    public DirectExchange authCaptchaExchange(@Value("${app.auth.captcha.rabbit.exchange:legal.auth.captcha.exchange}") String name) {
+        return new DirectExchange(name, true, false);
+    }
+
+    @Bean
+    public Queue authCaptchaQueue(@Value("${app.auth.captcha.rabbit.queue:legal.auth.captcha.queue}") String name) {
+        return QueueBuilder.durable(name).build();
+    }
+
+    @Bean
+    public Binding authCaptchaBinding(Queue authCaptchaQueue,
+                                      DirectExchange authCaptchaExchange,
+                                      @Value("${app.auth.captcha.rabbit.routing-key:legal.auth.captcha}") String routingKey) {
+        return BindingBuilder.bind(authCaptchaQueue).to(authCaptchaExchange).with(routingKey);
+    }
+
+    @Bean
     public MessageConverter rabbitJsonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);
     }

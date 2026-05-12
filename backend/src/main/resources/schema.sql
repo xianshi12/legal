@@ -8,6 +8,22 @@ CREATE TABLE IF NOT EXISTS chat_session (
     INDEX idx_chat_session_user_last_time (user_id, last_message_time)
 );
 
+CREATE TABLE IF NOT EXISTS auth_user (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    role VARCHAR(32) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    password_hash VARCHAR(128) NOT NULL,
+    password_salt VARCHAR(64) NOT NULL,
+    license_no VARCHAR(128) NULL,
+    display_name VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_auth_user_phone_role (phone, role),
+    INDEX idx_auth_user_phone (phone),
+    INDEX idx_auth_user_role_status (role, status)
+);
+
 CREATE TABLE IF NOT EXISTS law_article (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     law_name VARCHAR(255) NOT NULL,
